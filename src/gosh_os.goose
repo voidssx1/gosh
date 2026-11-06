@@ -78,3 +78,12 @@ extern fn gosh_tcgetpgrp(fd: i32) -> i32;
 extern fn gosh_poll_job(pid: i32, status: i32&) -> i32;
 
 extern fn gosh_glob_list_dir(path: const u8[:], out: u8[:]) -> i32;
+
+// Event ABI from gosh_os.h. RUNNING means no new event; retain saved state.
+let GOSH_JOB_ERROR: i32 = -1;
+let GOSH_JOB_RUNNING: i32 = 0;
+let GOSH_JOB_COMPLETED: i32 = 1;
+let GOSH_JOB_STOPPED: i32 = 2;
+let GOSH_JOB_CONTINUED: i32 = 3;
+extern fn gosh_wait_job(pid: i32, status: i32&) -> i32;
+extern fn gosh_continue_job(pgid: i32) -> i32;

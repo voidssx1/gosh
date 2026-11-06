@@ -366,6 +366,12 @@ for i in {1..16}; do touch "$TEST_TMP_DIR/globs/many/$i"; done
 run_test "glob capacity fails before command executes" 'cd "$GLOB_ROOT"; echo many/*' 'gosh: pathname expansion exceeds capacity' 2
 
 # Startup modes require isolated HOME directories and pseudo-terminals.
+if python3 "$REPO_ROOT/test/job_control_test.py" --gosh "$GOSH"; then
+    PASSED=$((PASSED + 1))
+else
+    FAILED=$((FAILED + 1))
+fi
+
 if GOSH="$GOSH" python3 "$REPO_ROOT/test/test_startup.py"; then
     PASSED=$((PASSED + 1))
 else
