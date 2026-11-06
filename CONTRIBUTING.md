@@ -64,6 +64,14 @@ python3 test/test_startup.py
 ```
 They also run as part of `test/test_suite.sh`; `GOSH` selects another binary.
 
+Completion regressions exercise the real Goose completion module with isolated PATH
+fixtures (including executable permissions and empty PATH entries):
+```bash
+python3 test/test_completion.py
+```
+This harness builds a temporary Goose probe using GOSH's native build configuration.
+It requires the Goose compiler and C toolchain; a missing compiler fails explicitly.
+
 ### 4. Running Benchmarks
 To evaluate performance impacts:
 ```bash
