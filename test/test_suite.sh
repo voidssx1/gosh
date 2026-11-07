@@ -75,6 +75,7 @@ run_test "variable in double quotes" "x=world && echo \"hello \$x\"" "hello worl
 run_test "variable in single quotes" "x=world && echo 'hello \$x'" "hello \$x"
 run_test "default parameter expansion" "unset UNSET_V && echo \${UNSET_V:-fallback}" "fallback"
 run_test "string length expansion" "MSG=hello && echo \${#MSG}" "5"
+run_test "empty braced parameter is safe" 'echo ${}' ""
 run_test "arithmetic expansion addition" "echo \$(( 10 + 32 ))" "42"
 run_test "arithmetic precedence" "echo \$(( 2 + 3 * 4 ))" "14"
 run_test "arithmetic parentheses" "echo \$(( (2 + 3) * 4 ))" "20"
