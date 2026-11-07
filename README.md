@@ -261,13 +261,13 @@ The benchmark suite compares GOSH against Bash, Zsh, and the system `sh` using v
 
 | Benchmark | Unit | GOSH | Bash | Zsh | sh |
 |:---|:---|---:|---:|---:|---:|
-| **Startup and exit (50 runs)** | ms total | 84.35 | **73.80** | 149.19 | 71.29 |
-| **Arithmetic loop (1,000 iterations)** | ms/run (mean) | **2.64** | 4.09 | 6.23 | 4.01 |
-| **Pipeline throughput (30 runs)** | ms total | 117.10 | 122.35 | 172.21 | **116.80** |
-| **Command substitution (30 runs)** | ms total | 65.94 | **55.55** | 110.96 | 57.22 |
-| **Function calls (200 calls)** | ms/run (mean) | 4.81 | 4.59 | 7.69 | **4.46** |
+| **Startup and exit (50 runs)** | ms total | 68.31 | 66.00 | 130.51 | 67.49 |
+| **Arithmetic loop (1,000 iterations)** | ms/run (mean) | **2.62** | 3.85 | 5.41 | 3.78 |
+| **Pipeline throughput (30 runs)** | ms total | 101.07 | 103.24 | 169.39 | **100.72** |
+| **Command substitution (30 runs)** | ms total | 56.47 | **51.19** | 88.92 | 52.70 |
+| **Function calls (200 calls)** | ms/run (mean) | 4.34 | 4.05 | 6.97 | 4.11 |
 
-These are measurements from one machine and one run, not universal performance claims. GOSH leads the arithmetic-loop workload in this run; startup, command substitution, and function-call results remain close to or behind some system shells.
+These are measurements from one machine and one run, not universal performance claims. GOSH leads the arithmetic-loop workload in this run (about 32% faster than Bash in this sample); startup and pipeline results are close to the system shells, while command substitution and function-call results remain slightly behind Bash.
 
 ### Methodology
 
