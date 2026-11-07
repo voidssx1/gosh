@@ -33,7 +33,7 @@ GOSH compiles into a native ELF binary using the Goose toolchain. It aims to com
   - Redirections apply to external commands, builtins, subshells, and compound loop/conditional statements.
 - **Subshell Isolation**: Grouped commands in `( ... )` run in a dedicated forked subshell process, isolating working directory changes and variable mutations from the parent shell.
 - **Command & Arithmetic Substitutions**: Full nested command capture (`$(...)` and `` `...` ``) and arithmetic expression evaluation (`$(( ... ))`).
-- **Control Flow & Compound Commands**: Standard `if/then/elif/else/fi`, `while/do/done`, and `for/in/do/done` loops.
+- **Control Flow & Compound Commands**: Standard `if/then/elif/else/fi`, `while/do/done`, and `for/in/do/done` loops. `while` conditions and loop bodies are parsed once and their statement trees are reused across iterations, avoiding repeated lexing and parsing.
 - **Shell Functions & Aliases**: User-defined functions with positional parameter arguments (`$1`, `$2`, `$#`) and command aliases.
 - **Process Management & Job Control**: Background process spawning (`cmd &`), active job tracking (`jobs`), and foreground/background job resumption (`fg`, `bg`).
 - **Interactive Line Editor**:
@@ -333,7 +333,7 @@ GOSH is under active development. The current release is focused on core POSIX s
 - [x] Background job management (`&`, `jobs`, `fg`, `bg`)
 - [ ] Here-documents (`<<EOF`) and here-strings (`<<<`)
 - [ ] `case ... esac` statement parsing and pattern execution
-- [ ] Arithmetic evaluator bytecode compilation (to match and exceed Bash loop throughput)
+- [ ] Extend arithmetic expansion with bitwise and ternary operators, with explicit overflow and division semantics
 - [ ] Recursive globbing (`**/*.ext`)
 - [ ] Programmable user-defined completion functions
 - [x] Interactive user configuration file loading (`~/.goshrc`)
