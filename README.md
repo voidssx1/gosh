@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Build: Native](https://img.shields.io/badge/Language-Goose-orange.svg)](https://github.com/goose-lang)
-[![Tests: 43 Passing](https://img.shields.io/badge/Tests-43%20Passed-brightgreen.svg)](test/test_suite.sh)
+[![Tests](https://img.shields.io/badge/Tests-Regression%20Suite-blue.svg)](test/test_suite.sh)
 
 ---
 
@@ -253,58 +253,59 @@ For comprehensive architectural specifications, refer to [**`docs/ARCHITECTURE.m
 
 ## 8. Performance Benchmarks
 
-The following benchmarks compare GOSH against standard Unix shells (**GNU Bash 5.3** and **Zsh 5.9**).
+The benchmark suite compares GOSH against Bash, Zsh, and the system `sh` using validated workloads. The latest checked-in run is recorded in [`bench/BENCHMARK_RESULTS.md`](bench/BENCHMARK_RESULTS.md).
 
-### Benchmark Results (lower is better, wall-clock time in milliseconds)
+### Latest Results
 
-| Benchmark | GOSH | Bash | Zsh |
-|:---|---:|---:|---:|
-| **Startup and exit** | **58.88 ms** | 105.63 ms | 122.71 ms |
-| **Pipeline throughput** | **97.11 ms** | 129.15 ms | 145.43 ms |
-| **Command substitution** | **50.48 ms** | 78.88 ms | 86.12 ms |
-| **Function calls** | **4.18 ms** | 5.02 ms | 7.14 ms |
-| **Arithmetic loop** | 8.13 ms | **4.81 ms** | 5.39 ms |
+<sub>Linux x86_64, kernel 6.18.56; run recorded 2026-11-07. Lower is better. Units differ by workload.</sub>
 
-> [!NOTE]
-> **Performance Analysis**:
-> - **GOSH excels** in startup latency (~1.8x faster than Bash, ~2.1x faster than Zsh), pipeline creation, subshell command substitution, and function invocation due to direct native compilation and lightweight process setup.
-> - **GOSH loses** on the reported arithmetic loop benchmark (8.13 ms vs Bash's 4.81 ms and Zsh's 5.39 ms). GOSH evaluates arithmetic expressions and while-loop conditions via recursive AST traversal on each iteration, whereas Bash and Zsh utilize flattened bytecode or optimized internal evaluators. Optimizing the arithmetic evaluator is part of the project roadmap.
+| Benchmark | Unit | GOSH | Bash | Zsh | sh |
+|:---|:---|---:|---:|---:|---:|
+| **Startup and exit (50 runs)** | ms total | 84.35 | **73.80** | 149.19 | 71.29 |
+| **Arithmetic loop (1,000 iterations)** | ms/run (mean) | **2.64** | 4.09 | 6.23 | 4.01 |
+| **Pipeline throughput (30 runs)** | ms total | 117.10 | 122.35 | 172.21 | **116.80** |
+| **Command substitution (30 runs)** | ms total | 65.94 | **55.55** | 110.96 | 57.22 |
+| **Function calls (200 calls)** | ms/run (mean) | 4.81 | 4.59 | 7.69 | **4.46** |
 
-### Benchmark Methodology, Environment & Limitations
-- **Platform**: Linux 6.18.56 (x86_64), GCC 15.3.0, Goose v2026.3.
-- **Methodology**: Benchmarks are automated via `bench/benchmark.py` and run using standard wall-clock precision (`time.perf_counter()`).
-- **Reproducibility**: Run `./bench/run_benchmarks.sh` locally to reproduce these figures.
-- **Environment-Specific Notice**: These results reflect execution on a dedicated Linux x86_64 workstation and should not be interpreted as universal performance claims across all platforms, hardware configurations, or workloads.
+These are measurements from one machine and one run, not universal performance claims. GOSH leads the arithmetic-loop workload in this run; startup, command substitution, and function-call results remain close to or behind some system shells.
+
+### Methodology
+
+- **Validation first**: Each workload's expected output and exit status are checked before timing. A failed check, launch error, nonzero exit, or timeout invalidates that shell's result for the workload.
+- **Timeout**: Each subprocess has a 10-second timeout. Timed samples are discarded if a failure occurs.
+- **Environment**: `LC_ALL=C`; validation runs are excluded from timings.
+- **Reproduce**: Build GOSH, then run `./bench/run_benchmarks.sh`. Results are written to `bench/BENCHMARK_RESULTS.md`.
 
 ---
 
 ## 9. Automated Test Suite
 
-GOSH includes a comprehensive automated test suite verifying correctness across all shell subsystems.
+GOSH includes shell-level regression cases and focused Python tests for the test runner, CLI argument handling, job control, and startup behavior.
 
-**Current Test Status**: **43 / 43 tests passing (100% pass rate)**.
+Run the main suite after building:
 
-To execute the test suite:
 ```bash
+goose build -o bin/gosh src/gosh.goose
 ./test/test_suite.sh
 ```
 
-### Test Coverage Areas
-- Echo builtin and escape sequence handling (`-n`, `-e`)
-- Working directory manipulation (`pwd`, `cd`, `cd -`, `OLDPWD`)
-- Variable assignment, scoping, and parameter expansions
-- Double quote expansion vs. single quote literal preservation
-- Arithmetic expansions (`$((...))` operator precedence and grouping)
-- Special shell parameters (`$?`, `$$`, `$!`, `$#`, `$0`, `$1`..`$9`)
-- Command substitutions (`$(...)` and backticks)
-- File and stream redirections (`>`, `>>`, `<`, `2>`, `2>&1`)
-- Multi-stage pipelines (2-stage, 3-stage, and builtins in pipelines)
-- Subshell isolation and subshell output redirection
-- Control flow statements (`if/then/else/fi`, `while/do/done`, `for/in/do/done`)
-- Shell functions with positional arguments
-- Aliases and unaliasing
-- Environment variable export and unsetting
-- Background job spawning and `jobs` command output
+The main script runs the shell command regressions and invokes the CLI, job-control, and startup test programs. The test-runner harness has its own independent tests:
+
+```bash
+python3 test/test_runner.py
+```
+
+### Coverage Areas
+
+- Builtins, command lookup, variables, exported assignments, and positional arguments
+- Arithmetic expansion, integer/string tests, and command/parameter substitutions
+- Quoting, tilde expansion, and pathname globbing (including ordering, hidden names, and unmatched patterns)
+- Pipelines, redirections, subshells, functions, aliases, and compound control flow
+- Background jobs, stopped/continued process states, and foreground/background resumption
+- Input-capacity boundaries and rejection before partial execution
+- CLI argument boundaries, startup modes, and interactive configuration behavior
+
+The suite's output reports the actual pass/fail totals for the build being tested; the README intentionally avoids a fixed passing-test count that can become stale as regressions are added.
 
 ---
 
