@@ -64,7 +64,7 @@ fn get_var(state: const ShellState&, name: const u8[:], out: u8[..1024]&) -> boo
         }
         return true;
     }
-    if ascii::is_digit(name[0]) {
+    if name.len > 0 && ascii::is_digit(name[0]) {
         let arg_num, is_num = parse_int(name);
         if is_num && arg_num >= 1 && arg_num <= state.script_args.len {
             format(out, state.script_args[(arg_num - 1) as i64]);
