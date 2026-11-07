@@ -11,6 +11,10 @@ from unittest.mock import patch
 
 from bench import benchmark
 
+FALSE_BIN = shutil.which('false') or '/usr/bin/false'
+TRUE_BIN = shutil.which('true') or '/usr/bin/true'
+SH_BIN = shutil.which('sh') or '/bin/sh'
+
 
 class BenchmarkTests(unittest.TestCase):
     def workload(self, **changes):
@@ -20,19 +24,19 @@ class BenchmarkTests(unittest.TestCase):
         for original in benchmark.BENCHMARKS[:2]:
             with self.subTest(benchmark=original['id']):
                 with self.assertRaisesRegex(benchmark.BenchmarkFailure, 'validation.*exit status 1'):
-                    benchmark.run_benchmark('/usr/bin/false', dict(original, iterations=2))
+                    benchmark.run_benchmark(FALSE_BIN, dict(original, iterations=2))
 
     def test_incorrect_output_is_rejected_before_timing(self):
         with patch.object(benchmark.time, 'perf_counter') as clock:
             with self.assertRaisesRegex(benchmark.BenchmarkFailure, 'validation: incorrect output'):
-                benchmark.run_benchmark('/bin/sh', self.workload(cmd='echo wrong'))
+                benchmark.run_benchmark(SH_BIN, self.workload(cmd='echo wrong'))
             clock.assert_not_called()
 
     def test_successful_noop_cannot_pass_workload_validation(self):
         for bench in benchmark.BENCHMARKS[1:]:
             with self.subTest(workload=bench['id']):
                 with self.assertRaisesRegex(benchmark.BenchmarkFailure, 'validation: incorrect output'):
-                    benchmark.run_benchmark('/usr/bin/true', bench)
+                    benchmark.run_benchmark(TRUE_BIN, bench)
 
     def test_missing_executable_is_explicit(self):
         with self.assertRaisesRegex(benchmark.BenchmarkFailure, 'validation: could not execute'):
@@ -104,7 +108,7 @@ class BenchmarkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / 'results.md'
             console = io.StringIO()
-            with patch.object(benchmark, 'SHELLS', {'false': '/usr/bin/false', 'sh': '/bin/sh'}):
+            with patch.object(benchmark, 'SHELLS', {'false': FALSE_BIN, 'sh': SH_BIN}):
                 with contextlib.redirect_stdout(console):
                     status = benchmark.main(report)
             self.assertEqual(status, 1)
