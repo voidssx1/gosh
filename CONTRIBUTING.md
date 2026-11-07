@@ -21,7 +21,7 @@ To build and contribute to GOSH, you will need:
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/AD1TYA-commits/gosh.git
+git clone https://github.com/voidssx1/gosh.git
 cd gosh
 ```
 
