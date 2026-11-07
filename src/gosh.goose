@@ -150,11 +150,12 @@ fn main() {
         if arg1 == "-c" && argc > 2 {
             var cmd_str: u8[>..] = [];
             arg(2, cmd_str);
-            format(state.script_name, "gosh");
             if argc > 3 {
                 var command_name: u8[>..] = [];
                 arg(3, command_name);
                 format(state.script_name, command_name);
+            } else {
+                format(state.script_name, "gosh");
             }
             for i in 4..argc {
                 var a: u8[>..] = [];

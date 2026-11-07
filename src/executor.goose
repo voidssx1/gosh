@@ -559,7 +559,7 @@ recursive fn execute_script(state: ShellState&, script_text: const u8[:]) -> i32
     tokenize_line(script_text, tokens);
 
     var stmts: Statement[..8] = [];
-    var parse_error: u8[>..] = [];
+    var parse_error: u8[..256] = [];
     if !parse_statements(tokens, stmts, parse_error) {
         print("gosh: syntax error: ", parse_error);
         state.last_status = 2;

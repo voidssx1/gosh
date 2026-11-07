@@ -15,7 +15,7 @@ fn is_control_end(kind: i32) -> bool {
     kind == TOKEN_FI || kind == TOKEN_DO || kind == TOKEN_DONE
 }
 
-fn copy_control_text(tokens: const Token[..64]&, start: i32, end: i32, out: u8[>..]&) {
+fn copy_control_text(tokens: const Token[..64]&, start: i32, end: i32, out: u8[..512]&) {
     for i in start..end {
         if tokens[i].kind == TOKEN_NEWLINE || tokens[i].kind == TOKEN_SEMI {
             format(out, "; ");
@@ -28,7 +28,7 @@ fn copy_control_text(tokens: const Token[..64]&, start: i32, end: i32, out: u8[>
 
 // Stops are recognized only where a command can begin. Keyword-shaped arguments
 // such as `echo done` must not close a loop.
-recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: i32, stop2: i32, stop3: i32, out: u8[>..]&, error: u8[>..]&) -> bool {
+recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: i32, stop2: i32, stop3: i32, out: u8[..512]&, error: u8[..256]&) -> bool {
     let start = pos;
     var command_start = true;
     var has_command = false;
@@ -50,10 +50,10 @@ recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: 
                 pos += 2;
                 continue;
             }
-            var closing = TOKEN_RBRACE;
+            var closing: i32 = TOKEN_RBRACE;
             if kind == TOKEN_LPAREN { closing = TOKEN_RPAREN; }
             pos++;
-            var grouped: u8[>..] = [];
+            var grouped: u8[..512] = [];
             if !collect_control_text(tokens, pos, closing, -1, -1, grouped, error) { return false; }
             if pos >= tokens.len || tokens[pos].kind != closing {
                 format(error, "unclosed group in control structure");
@@ -78,7 +78,7 @@ recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: 
     return true;
 }
 
-fn expect_control_token(tokens: const Token[..64]&, pos: i32&, kind: i32, name: const u8[:], error: u8[>..]&) -> bool {
+fn expect_control_token(tokens: const Token[..64]&, pos: i32&, kind: i32, name: const u8[:], error: u8[..256]&) -> bool {
     if pos >= tokens.len || tokens[pos].kind != kind {
         format(error, "expected '", name, "'");
         return false;
@@ -87,12 +87,12 @@ fn expect_control_token(tokens: const Token[..64]&, pos: i32&, kind: i32, name: 
     return true;
 }
 
-recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statement&, error: u8[>..]&) -> bool {
+recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statement&, error: u8[..256]&) -> bool {
     let kind = tokens[pos].kind;
     pos++;
-    var cond: u8[>..] = [];
-    var body: u8[>..] = [];
-    var alternative: u8[>..] = [];
+    var cond: u8[..512] = [];
+    var body: u8[..512] = [];
+    var alternative: u8[..512] = [];
     if kind == TOKEN_IF || kind == TOKEN_ELIF {
         stmt.kind = STMT_IF;
         if !collect_control_text(tokens, pos, TOKEN_THEN, -1, -1, cond, error) { return false; }
@@ -158,9 +158,9 @@ recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statemen
     return true;
 }
 
-fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u8[>..]&) -> bool {
+fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u8[..256]&) -> bool {
     stmts.clear();
-    var pos = 0;
+    var pos: i32 = 0;
     let n = tokens.len;
 
     while pos < n {
