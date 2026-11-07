@@ -143,7 +143,7 @@ recursive fn execute_cmd_in_child(state: ShellState&, raw_cmd: const Command&) {
 
     var exp_args: u8[..128][..16] = [];
     if !expand_arguments(state, raw_cmd.argv, exp_args) {
-        println("gosh: pathname expansion exceeds capacity");
+        print("gosh: pathname expansion exceeds capacity");
         gosh_exit(2);
     }
 
@@ -207,7 +207,7 @@ recursive fn execute_single_cmd(state: ShellState&, raw_cmd: const Command&) -> 
     // 2. Expand arguments
     var exp_args: u8[..128][..16] = [];
     if !expand_arguments(state, raw_cmd.argv, exp_args) {
-        println("gosh: pathname expansion exceeds capacity");
+        print("gosh: pathname expansion exceeds capacity");
         return 2;
     }
 
