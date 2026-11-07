@@ -81,20 +81,7 @@ int32_t gosh_capture_cmd_packed(
     gosh_mut_slice_u8 out
 );
 
-/* In-process redirection for builtins */
-int32_t gosh_redirect_begin(
-    gosh_slice_u8 in_file,
-    gosh_slice_u8 out_file,
-    int32_t append_out,
-    gosh_slice_u8 err_file,
-    int32_t append_err,
-    int32_t redirect_err_to_out,
-    int32_t *saved_fds
-);
-
-void gosh_redirect_end(const int32_t *saved_fds);
-
-/* Compound descriptor scopes: -1 records an originally closed descriptor. */
+/* Snapshot/restore all standard descriptors: -1 records an originally closed descriptor. */
 int32_t gosh_save_stdio(int32_t *saved_fds);
 int32_t gosh_restore_stdio(const int32_t *saved_fds);
 

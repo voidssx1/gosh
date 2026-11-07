@@ -53,19 +53,7 @@ extern fn gosh_capture_cmd_packed(
     out: u8[:]
 ) -> i32;
 
-extern fn gosh_redirect_begin(
-    in_file: const u8[:],
-    out_file: const u8[:],
-    append_out: i32,
-    err_file: const u8[:],
-    append_err: i32,
-    redirect_err_to_out: i32,
-    saved_fds: i32&
-) -> i32;
-
-extern fn gosh_redirect_end(saved_fds: const i32&);
-
-// Snapshot/restore all three standard descriptors for compound commands.
+// Snapshot/restore all three standard descriptors for compound commands, functions and builtins.
 extern fn gosh_save_stdio(saved_fds: i32&) -> i32;
 extern fn gosh_restore_stdio(saved_fds: const i32&) -> i32;
 
