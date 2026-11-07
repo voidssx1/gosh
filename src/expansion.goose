@@ -64,10 +64,12 @@ fn get_var(state: const ShellState&, name: const u8[:], out: u8[..1024]&) -> boo
         }
         return true;
     }
-    let arg_num, is_num = parse_int(name);
-    if is_num && arg_num >= 1 && arg_num <= state.script_args.len {
-        format(out, state.script_args[(arg_num - 1) as i64]);
-        return true;
+    if ascii::is_digit(name[0]) {
+        let arg_num, is_num = parse_int(name);
+        if is_num && arg_num >= 1 && arg_num <= state.script_args.len {
+            format(out, state.script_args[(arg_num - 1) as i64]);
+            return true;
+        }
     }
     if name == "PWD" {
         format(out, state.cwd);
@@ -135,6 +137,30 @@ fn set_var(state: ShellState&, name: const u8[:], val: const u8[:], export_to_en
     return 0;
 }
 
+fn get_var_int(state: const ShellState&, name: const u8[:], val: i64&) -> bool {
+    if name.len == 0 { return false; }
+    for i in state.var_count {
+        let idx = state.var_count - 1 - i;
+        if state.vars[idx].name == name {
+            let v, vok = parse_int(state.vars[idx].val);
+            if vok {
+                val = v;
+                return true;
+            }
+            return false;
+        }
+    }
+    var buf: u8[..1024] = [];
+    if get_var(state, name, buf) {
+        let v, vok = parse_int(buf);
+        if vok {
+            val = v;
+            return true;
+        }
+    }
+    return false;
+}
+
 // Simple arithmetic evaluator: handles +, -, *, /, %, (, ) and numbers/vars
 recursive fn eval_arith(state: const ShellState&, expr: const u8[:]) -> i64 {
     var s = trim(expr);
@@ -197,13 +223,12 @@ recursive fn eval_arith(state: const ShellState&, expr: const u8[:]) -> i64 {
     if s[0] == '+' { return eval_arith(state, s[1..]); }
 
     // Single term: number or variable name
-    let num, ok = parse_int(s);
-    if ok { return num; }
-
-    var var_val: u8[..1024] = [];
-    if get_var(state, s, var_val) {
-        let v, vok = parse_int(var_val);
-        if vok { return v; }
+    if ascii::is_digit(s[0]) || (s[0] == '-' && s.len > 1 && ascii::is_digit(s[1])) {
+        let num, ok = parse_int(s);
+        if ok { return num; }
+    } else {
+        var v: i64 = 0;
+        if get_var_int(state, s, v) { return v; }
     }
 
     return 0;
@@ -270,6 +295,18 @@ fn capture_subshell_output(state: const ShellState&, sub_cmd: const u8[:], out: 
 fn expand_word(state: const ShellState&, word: const u8[:], out: u8[..128]&) {
     out.clear();
     if word.len == 0 { return; }
+
+    var has_special = false;
+    for b in word {
+        if b == '$' || b == '~' || b == '"' || b == '\'' || b == '\\' || b == '`' {
+            has_special = true;
+            break;
+        }
+    }
+    if !has_special {
+        format(out, word);
+        return;
+    }
 
     var i = 0;
     let len = word.len;
@@ -609,8 +646,8 @@ fn expand_arguments(state: const ShellState&, raw_args: const u8[..128][..16]&, 
         var exp: u8[..128] = [];
         expand_word(state, arg, exp);
         let is_quoted = starts_with(arg, "\"") || starts_with(arg, "'");
-        var matches: u8[..128][..16] = [];
         if !is_quoted && (find(exp, "*") >= 0 || find(exp, "?") >= 0) {
+            var matches: u8[..128][..16] = [];
             if !glob_paths(exp, "", matches) { return false; }
             // Insertion sort over the bounded result set.
             for i in matches.len {
@@ -622,10 +659,13 @@ fn expand_arguments(state: const ShellState&, raw_args: const u8[..128][..16]&, 
                     j--;
                 }
             }
+            if matches.len == 0 { matches.push(exp); }
+            if expanded_args.len + matches.len > 16 { return false; }
+            for word in matches { expanded_args.push(word); }
+        } else {
+            if expanded_args.len >= 16 { return false; }
+            expanded_args.push(exp);
         }
-        if matches.len == 0 { matches.push(exp); }
-        if expanded_args.len + matches.len > 16 { return false; }
-        for word in matches { expanded_args.push(word); }
     }
     return true;
 }

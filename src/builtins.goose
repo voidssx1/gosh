@@ -410,29 +410,31 @@ fn builtin_test(args: const u8[..128][..16]&) -> i32 {
         return if gosh_is_executable(args[2]) != 0 { 0 } else { 1 };
     }
 
-    // Binary string comparisons: s1 = s2, s1 == s2, s1 != s2
+    // Binary comparisons: string (s1 = s2, s1 != s2) or integer (-eq, -lt, etc.)
     if len == 4 {
         let left = args[1];
         let op = args[2];
         let right = args[3];
 
-        if op == "=" || op == "==" {
-            return if left == right { 0 } else { 1 };
-        }
-        if op == "!=" {
-            return if left != right { 0 } else { 1 };
-        }
-
-        // Integer comparisons: -eq, -ne, -lt, -le, -gt, -ge
-        let n1, ok1 = parse_int(left);
-        let n2, ok2 = parse_int(right);
-        if ok1 && ok2 {
-            if op == "-eq" { return if n1 == n2 { 0 } else { 1 }; }
-            if op == "-ne" { return if n1 != n2 { 0 } else { 1 }; }
-            if op == "-lt" { return if n1 < n2 { 0 } else { 1 }; }
-            if op == "-le" { return if n1 <= n2 { 0 } else { 1 }; }
-            if op == "-gt" { return if n1 > n2 { 0 } else { 1 }; }
-            if op == "-ge" { return if n1 >= n2 { 0 } else { 1 }; }
+        if op.len > 0 && op[0] == '-' {
+            // Integer comparisons: -eq, -ne, -lt, -le, -gt, -ge
+            let n1, ok1 = parse_int(left);
+            let n2, ok2 = parse_int(right);
+            if ok1 && ok2 {
+                if op == "-eq" { return if n1 == n2 { 0 } else { 1 }; }
+                if op == "-ne" { return if n1 != n2 { 0 } else { 1 }; }
+                if op == "-lt" { return if n1 < n2 { 0 } else { 1 }; }
+                if op == "-le" { return if n1 <= n2 { 0 } else { 1 }; }
+                if op == "-gt" { return if n1 > n2 { 0 } else { 1 }; }
+                if op == "-ge" { return if n1 >= n2 { 0 } else { 1 }; }
+            }
+        } else {
+            if op == "=" || op == "==" {
+                return if left == right { 0 } else { 1 };
+            }
+            if op == "!=" {
+                return if left != right { 0 } else { 1 };
+            }
         }
     }
 

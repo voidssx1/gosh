@@ -416,17 +416,62 @@ recursive fn execute_compound_statement(state: ShellState&, stmt: const Statemen
     }
 
     if stmt.kind == STMT_WHILE {
+        if stmt.cond_text.len == 0 { return 0; }
+        var cond_tokens: Token[..64] = [];
+        if tokenize_line(stmt.cond_text, cond_tokens) < 0 {
+            state.last_status = 2;
+            return 2;
+        }
+        var cond_stmts: Statement[..8] = [];
+        var parse_error: u8[..256] = [];
+        if !parse_statements(cond_tokens, cond_stmts, parse_error) {
+            if parse_error.len > 0 { print("gosh: syntax error: ", parse_error); }
+            state.last_status = 2;
+            return 2;
+        }
+
+        var body_stmts: Statement[..8] = [];
+        if stmt.body_text.len > 0 {
+            var body_tokens: Token[..64] = [];
+            if tokenize_line(stmt.body_text, body_tokens) < 0 {
+                state.last_status = 2;
+                return 2;
+            }
+            if !parse_statements(body_tokens, body_stmts, parse_error) {
+                if parse_error.len > 0 { print("gosh: syntax error: ", parse_error); }
+                state.last_status = 2;
+                return 2;
+            }
+        }
+
         var last: i32 = 0;
         loop {
             if !state.running { break; }
-            let cond_res = execute_script(state, stmt.cond_text);
+            let cond_res = execute_statements(state, cond_stmts);
             if cond_res != 0 { break; }
-            last = execute_script(state, stmt.body_text);
+            if body_stmts.len > 0 {
+                last = execute_statements(state, body_stmts);
+            }
         }
         return last;
     }
 
     if stmt.kind == STMT_FOR {
+        var body_stmts: Statement[..8] = [];
+        if stmt.body_text.len > 0 {
+            var body_tokens: Token[..64] = [];
+            if tokenize_line(stmt.body_text, body_tokens) < 0 {
+                state.last_status = 2;
+                return 2;
+            }
+            var parse_error: u8[..256] = [];
+            if !parse_statements(body_tokens, body_stmts, parse_error) {
+                if parse_error.len > 0 { print("gosh: syntax error: ", parse_error); }
+                state.last_status = 2;
+                return 2;
+            }
+        }
+
         var last: i32 = 0;
         for w in stmt.for_words {
             if !state.running { break; }
@@ -434,7 +479,9 @@ recursive fn execute_compound_statement(state: ShellState&, stmt: const Statemen
             expand_word(state, w, exp_w);
             let assign_status = set_var(state, stmt.for_var, exp_w, false);
             if assign_status != 0 { return assign_status; }
-            last = execute_script(state, stmt.body_text);
+            if body_stmts.len > 0 {
+                last = execute_statements(state, body_stmts);
+            }
         }
         return last;
     }
@@ -500,26 +547,8 @@ recursive fn execute_statement(state: ShellState&, stmt: const Statement&) -> i3
     return 0;
 }
 
-// Execute a full script or command line string
-recursive fn execute_script(state: ShellState&, script_text: const u8[:]) -> i32 {
-    if script_text.len == 0 { return state.last_status; }
-
-    var tokens: Token[..64] = [];
-    if tokenize_line(script_text, tokens) < 0 {
-        state.last_status = 2;
-        return 2;
-    }
-
-    var stmts: Statement[..8] = [];
-    var parse_error: u8[..256] = [];
-    if !parse_statements(tokens, stmts, parse_error) {
-        if parse_error.len > 0 {
-            print("gosh: syntax error: ", parse_error);
-        }
-        state.last_status = 2;
-        return 2;
-    }
-
+// Execute a list of AST statements with AND/OR chaining
+recursive fn execute_statements(state: ShellState&, stmts: const Statement[..8]&) -> i32 {
     var skip_next_and = false;
     var skip_next_or = false;
 
@@ -556,6 +585,29 @@ recursive fn execute_script(state: ShellState&, script_text: const u8[:]) -> i32
     }
 
     return state.last_status;
+}
+
+// Execute a full script or command line string
+recursive fn execute_script(state: ShellState&, script_text: const u8[:]) -> i32 {
+    if script_text.len == 0 { return state.last_status; }
+
+    var tokens: Token[..64] = [];
+    if tokenize_line(script_text, tokens) < 0 {
+        state.last_status = 2;
+        return 2;
+    }
+
+    var stmts: Statement[..8] = [];
+    var parse_error: u8[..256] = [];
+    if !parse_statements(tokens, stmts, parse_error) {
+        if parse_error.len > 0 {
+            print("gosh: syntax error: ", parse_error);
+        }
+        state.last_status = 2;
+        return 2;
+    }
+
+    return execute_statements(state, stmts);
 }
 
 // Source a script file
