@@ -66,16 +66,17 @@ fn complete_path(prefix: const u8[:], results: u8[..256][..64]&) {
                         if starts_with(it, prefix) {
                             var full_path: u8[>..] = [];
                             format(full_path, dir, "/", it);
-                            if gosh_is_executable(full_path) == 0 { continue; }
-                            // Check if already in results
-                            var already = false;
-                            for r in results {
-                                if r == it { already = true; break; }
-                            }
-                            if !already {
-                                var w: u8[..256] = [];
-                                format(w, it);
-                                results.push(w);
+                            if gosh_is_executable(full_path) != 0 {
+                                // Check if already in results
+                                var already = false;
+                                for r in results {
+                                    if r == it { already = true; break; }
+                                }
+                                if !already {
+                                    var w: u8[..256] = [];
+                                    format(w, it);
+                                    results.push(w);
+                                }
                             }
                         }
                     }
@@ -110,11 +111,11 @@ fn completion_context(input: const u8[:]) -> CompletionContext {
             ((i > 0 && (input[i - 1] == '>' || input[i - 1] == '<')) ||
              (i + 1 < input.len && input[i + 1] == '>'));
         if c == '|' || c == ';' || (c == '&' && !redir_amp) {
-            context.word_start = i + 1;
+            context.word_start = (i + 1) as i32;
             context.command_position = true;
         } else if c == ' ' || c == '\t' {
-            if context.word_start < i { context.command_position = false; }
-            context.word_start = i + 1;
+            if context.word_start < i as i32 { context.command_position = false; }
+            context.word_start = (i + 1) as i32;
         }
     }
     return context;
