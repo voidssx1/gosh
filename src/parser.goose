@@ -15,20 +15,40 @@ fn is_control_end(kind: i32) -> bool {
     kind == TOKEN_FI || kind == TOKEN_DO || kind == TOKEN_DONE
 }
 
-fn copy_control_text(tokens: const Token[..64]&, start: i32, end: i32, out: u8[..512]&) {
+fn copy_control_text(tokens: const Token[..64]&, start: i32, end: i32, out: u8[..512]&, max_len: i32) -> bool {
     for i in start..end {
         if tokens[i].kind == TOKEN_NEWLINE || tokens[i].kind == TOKEN_SEMI {
-            format(out, "; ");
+            if out.len + 1 > max_len {
+                print("gosh: input capacity exceeded: compound text bytes (maximum ", max_len, ")");
+                return false;
+            }
+            out.push(';');
+            if out.len + 1 > max_len {
+                print("gosh: input capacity exceeded: compound text bytes (maximum ", max_len, ")");
+                return false;
+            }
+            out.push(' ');
         } else {
-            if out.len > 0 && out[out.len - 1] != ' ' { out.push(' '); }
+            if out.len > 0 && out[out.len - 1] != ' ' {
+                if out.len + 1 > max_len {
+                    print("gosh: input capacity exceeded: compound text bytes (maximum ", max_len, ")");
+                    return false;
+                }
+                out.push(' ');
+            }
+            if out.len + tokens[i].text.len > max_len {
+                print("gosh: input capacity exceeded: compound text bytes (maximum ", max_len, ")");
+                return false;
+            }
             format(out, tokens[i].text);
         }
     }
+    return true;
 }
 
 // Stops are recognized only where a command can begin. Keyword-shaped arguments
 // such as `echo done` must not close a loop.
-recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: i32, stop2: i32, stop3: i32, out: u8[..512]&, error: u8[..256]&) -> bool {
+recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: i32, stop2: i32, stop3: i32, out: u8[..512]&, error: u8[..256]&, max_len: i32) -> bool {
     let start = pos;
     var command_start = true;
     var has_command = false;
@@ -54,7 +74,7 @@ recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: 
             if kind == TOKEN_LPAREN { closing = TOKEN_RPAREN; }
             pos++;
             var grouped: u8[..512] = [];
-            if !collect_control_text(tokens, pos, closing, -1, -1, grouped, error) { return false; }
+            if !collect_control_text(tokens, pos, closing, -1, -1, grouped, error, 512) { return false; }
             if pos >= tokens.len || tokens[pos].kind != closing {
                 format(error, "unclosed group in control structure");
                 return false;
@@ -74,8 +94,7 @@ recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: 
         format(error, "expected a command in control structure");
         return false;
     }
-    copy_control_text(tokens, start, pos, out);
-    return true;
+    return copy_control_text(tokens, start, pos, out, max_len);
 }
 
 fn expect_control_token(tokens: const Token[..64]&, pos: i32&, kind: i32, name: const u8[:], error: u8[..256]&) -> bool {
@@ -95,9 +114,9 @@ recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statemen
     var alternative: u8[..512] = [];
     if kind == TOKEN_IF || kind == TOKEN_ELIF {
         stmt.kind = STMT_IF;
-        if !collect_control_text(tokens, pos, TOKEN_THEN, -1, -1, cond, error) { return false; }
+        if !collect_control_text(tokens, pos, TOKEN_THEN, -1, -1, cond, error, 256) { return false; }
         if !expect_control_token(tokens, pos, TOKEN_THEN, "then", error) { return false; }
-        if !collect_control_text(tokens, pos, TOKEN_ELIF, TOKEN_ELSE, TOKEN_FI, body, error) { return false; }
+        if !collect_control_text(tokens, pos, TOKEN_ELIF, TOKEN_ELSE, TOKEN_FI, body, error, 512) { return false; }
         if pos < tokens.len && tokens[pos].kind == TOKEN_ELIF {
             // Lower the remaining chain to an if in the false branch. The
             // recursive tail consumes the one fi shared by the entire chain.
@@ -105,22 +124,26 @@ recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statemen
             var tail = Statement {};
             if !parse_control(tokens, pos, tail, error) { return false; }
             format(alternative, "if ");
-            copy_control_text(tokens, tail_start + 1, pos, alternative);
+            if !copy_control_text(tokens, tail_start + 1, pos, alternative, 256) { return false; }
         } else {
             if pos < tokens.len && tokens[pos].kind == TOKEN_ELSE {
                 pos++;
-                if !collect_control_text(tokens, pos, TOKEN_FI, -1, -1, alternative, error) { return false; }
+                if !collect_control_text(tokens, pos, TOKEN_FI, -1, -1, alternative, error, 256) { return false; }
             }
             if !expect_control_token(tokens, pos, TOKEN_FI, "fi", error) { return false; }
         }
     } else {
         if kind == TOKEN_WHILE {
             stmt.kind = STMT_WHILE;
-            if !collect_control_text(tokens, pos, TOKEN_DO, -1, -1, cond, error) { return false; }
+            if !collect_control_text(tokens, pos, TOKEN_DO, -1, -1, cond, error, 256) { return false; }
         } else {
             stmt.kind = STMT_FOR;
             if pos >= tokens.len || tokens[pos].kind != TOKEN_WORD {
                 format(error, "expected for variable");
+                return false;
+            }
+            if tokens[pos].text.len > 32 {
+                print("gosh: input capacity exceeded: for variable bytes (maximum 32)");
                 return false;
             }
             format(stmt.for_var, tokens[pos].text);
@@ -133,7 +156,7 @@ recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statemen
                         return false;
                     }
                     if stmt.for_words.len >= 16 {
-                        format(error, "too many for words");
+                        print("gosh: input capacity exceeded: for words (maximum 16)");
                         return false;
                     }
                     var word: u8[..128] = [];
@@ -145,12 +168,8 @@ recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statemen
             while pos < tokens.len && (tokens[pos].kind == TOKEN_SEMI || tokens[pos].kind == TOKEN_NEWLINE) { pos++; }
         }
         if !expect_control_token(tokens, pos, TOKEN_DO, "do", error) { return false; }
-        if !collect_control_text(tokens, pos, TOKEN_DONE, -1, -1, body, error) { return false; }
+        if !collect_control_text(tokens, pos, TOKEN_DONE, -1, -1, body, error, 512) { return false; }
         if !expect_control_token(tokens, pos, TOKEN_DONE, "done", error) { return false; }
-    }
-    if cond.len > 256 || body.len > 512 || alternative.len > 256 {
-        format(error, "control structure exceeds text capacity");
-        return false;
     }
     format(stmt.cond_text, cond);
     format(stmt.body_text, body);
@@ -172,6 +191,11 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
             continue;
         }
 
+        if stmts.len >= 8 {
+            print("gosh: input capacity exceeded: statements (maximum 8)");
+            return false;
+        }
+
         if tok.kind == TOKEN_IF || tok.kind == TOKEN_WHILE || tok.kind == TOKEN_FOR {
             var stmt = Statement {};
             if !parse_control(tokens, pos, stmt, error) { return false; }
@@ -179,7 +203,11 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                 var r = Redirection { kind: tokens[pos].kind };
                 pos++;
                 if pos < n && tokens[pos].kind == TOKEN_WORD { format(r.target, tokens[pos].text); pos++; }
-                if stmt.redirs.len < 4 { stmt.redirs.push(r); }
+                if stmt.redirs.len >= 4 {
+                    print("gosh: input capacity exceeded: redirections (maximum 4)");
+                    return false;
+                }
+                stmt.redirs.push(r);
             }
             stmts.push(stmt);
             continue;
@@ -196,10 +224,18 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
             if tok.kind == TOKEN_FUNCTION {
                 pos++;
                 if pos < n && tokens[pos].kind == TOKEN_WORD {
+                    if tokens[pos].text.len > 32 {
+                        print("gosh: input capacity exceeded: function name bytes (maximum 32)");
+                        return false;
+                    }
                     format(stmt.func_name, tokens[pos].text);
                     pos++;
                 }
             } else {
+                if tok.text.len > 32 {
+                    print("gosh: input capacity exceeded: function name bytes (maximum 32)");
+                    return false;
+                }
                 format(stmt.func_name, tok.text);
                 pos += 3; // name ( )
             }
@@ -215,11 +251,27 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                         if depth == 0 { pos++; break; }
                     }
                     if tokens[pos].kind == TOKEN_NEWLINE || tokens[pos].kind == TOKEN_SEMI {
+                        if stmt.func_body.len + 1 > 512 {
+                            print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                            return false;
+                        }
                         stmt.func_body.push(';');
+                        if stmt.func_body.len + 1 > 512 {
+                            print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                            return false;
+                        }
                         stmt.func_body.push(' ');
                     } else {
                         if stmt.func_body.len > 0 && stmt.func_body[stmt.func_body.len - 1] != ' ' {
+                            if stmt.func_body.len + 1 > 512 {
+                                print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                                return false;
+                            }
                             stmt.func_body.push(' ');
+                        }
+                        if stmt.func_body.len + tokens[pos].text.len > 512 {
+                            print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                            return false;
                         }
                         format(stmt.func_body, tokens[pos].text);
                     }
@@ -243,11 +295,27 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                     if depth == 0 { pos++; break; }
                 }
                 if tokens[pos].kind == TOKEN_NEWLINE || tokens[pos].kind == TOKEN_SEMI {
+                    if stmt.body_text.len + 1 > 512 {
+                        print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                        return false;
+                    }
                     stmt.body_text.push(';');
+                    if stmt.body_text.len + 1 > 512 {
+                        print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                        return false;
+                    }
                     stmt.body_text.push(' ');
                 } else {
                     if stmt.body_text.len > 0 && stmt.body_text[stmt.body_text.len - 1] != ' ' {
+                        if stmt.body_text.len + 1 > 512 {
+                            print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                            return false;
+                        }
                         stmt.body_text.push(' ');
+                    }
+                    if stmt.body_text.len + tokens[pos].text.len > 512 {
+                        print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                        return false;
                     }
                     format(stmt.body_text, tokens[pos].text);
                 }
@@ -257,7 +325,11 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                 var r = Redirection { kind: tokens[pos].kind };
                 pos++;
                 if pos < n && tokens[pos].kind == TOKEN_WORD { format(r.target, tokens[pos].text); pos++; }
-                if stmt.redirs.len < 4 { stmt.redirs.push(r); }
+                if stmt.redirs.len >= 4 {
+                    print("gosh: input capacity exceeded: redirections (maximum 4)");
+                    return false;
+                }
+                stmt.redirs.push(r);
             }
             if pos < n && (tokens[pos].kind == TOKEN_AND || tokens[pos].kind == TOKEN_OR || tokens[pos].kind == TOKEN_SEMI || tokens[pos].kind == TOKEN_AMP) {
                 if tokens[pos].kind == TOKEN_AND { stmt.op_after = OP_AND; }
@@ -281,9 +353,11 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                 // End current command, push to pipeline
                 current_cmd.arg_count = current_cmd.argv.len as i32;
                 current_cmd.redir_count = current_cmd.redirs.len as i32;
-                if pipe.cmds.len < 4 {
-                    pipe.cmds.push(current_cmd);
+                if pipe.cmds.len >= 4 {
+                    print("gosh: input capacity exceeded: pipeline stages (maximum 4)");
+                    return false;
                 }
+                pipe.cmds.push(current_cmd);
                 current_cmd = Command {};
                 pos++;
                 continue;
@@ -307,9 +381,11 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                     format(r.target, tokens[pos].text);
                     pos++;
                 }
-                if current_cmd.redirs.len < 4 {
-                    current_cmd.redirs.push(r);
+                if current_cmd.redirs.len >= 4 {
+                    print("gosh: input capacity exceeded: redirections (maximum 4)");
+                    return false;
                 }
+                current_cmd.redirs.push(r);
                 continue;
             }
 
@@ -319,6 +395,10 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                 if current_cmd.argv.len == 0 && !current_cmd.is_assignment {
                     let eq = find(t.text, "=");
                     if eq > 0 && ascii::is_alpha(t.text[0]) {
+                        if eq > 64 {
+                            print("gosh: input capacity exceeded: assignment name bytes (maximum 64)");
+                            return false;
+                        }
                         current_cmd.is_assignment = true;
                         format(current_cmd.assign_var, t.text[..eq]);
                         format(current_cmd.assign_val, t.text[eq + 1..]);
@@ -327,11 +407,13 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
                     }
                 }
 
-                if current_cmd.argv.len < 16 {
-                    var w: u8[..128] = [];
-                    format(w, t.text);
-                    current_cmd.argv.push(w);
+                if current_cmd.argv.len >= 16 {
+                    print("gosh: input capacity exceeded: arguments (maximum 16)");
+                    return false;
                 }
+                var w: u8[..128] = [];
+                format(w, t.text);
+                current_cmd.argv.push(w);
                 pos++;
                 continue;
             }
@@ -342,6 +424,10 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, error: u
         current_cmd.arg_count = current_cmd.argv.len as i32;
         current_cmd.redir_count = current_cmd.redirs.len as i32;
         if current_cmd.arg_count > 0 || current_cmd.is_assignment || current_cmd.redir_count > 0 {
+            if pipe.cmds.len >= 4 {
+                print("gosh: input capacity exceeded: pipeline stages (maximum 4)");
+                return false;
+            }
             pipe.cmds.push(current_cmd);
         }
         pipe.cmd_count = pipe.cmds.len as i32;

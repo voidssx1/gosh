@@ -505,12 +505,17 @@ recursive fn execute_script(state: ShellState&, script_text: const u8[:]) -> i32
     if script_text.len == 0 { return state.last_status; }
 
     var tokens: Token[..64] = [];
-    tokenize_line(script_text, tokens);
+    if tokenize_line(script_text, tokens) < 0 {
+        state.last_status = 2;
+        return 2;
+    }
 
     var stmts: Statement[..8] = [];
     var parse_error: u8[..256] = [];
     if !parse_statements(tokens, stmts, parse_error) {
-        print("gosh: syntax error: ", parse_error);
+        if parse_error.len > 0 {
+            print("gosh: syntax error: ", parse_error);
+        }
         state.last_status = 2;
         return 2;
     }
@@ -561,6 +566,11 @@ recursive fn source_file(state: ShellState&, path: const u8[:]) -> i32 {
         var content: u8[>..] = [];
         read_ok = read_file(path, content);
         if read_ok {
+            if content.len > 32768 {
+                print("gosh: input capacity exceeded: script bytes (maximum 32768)");
+                state.last_status = 2;
+                return 2;
+            }
             format(script_buf, content);
         }
     }

@@ -33,6 +33,12 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
             continue;
         }
 
+        // Reserve the final slot for EOF, after whitespace/comments are skipped.
+        if tokens.len >= 63 {
+            print("gosh: input capacity exceeded: tokens (maximum 63)");
+            return -1;
+        }
+
         // Newline
         if c == '\n' {
             var tok = Token { kind: TOKEN_NEWLINE };
@@ -176,8 +182,20 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
 
             // Arithmetic $((...))
             if ch == '$' && i + 2 < len && line[i + 1] == '(' && line[i + 2] == '(' {
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('$');
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('(');
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('(');
                 i += 3;
                 var depth = 0;
@@ -187,11 +205,23 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
                         if depth == 0 { break; }
                         depth--;
                     }
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(line[i]);
                     i++;
                 }
                 if i + 1 < len && line[i] == ')' && line[i + 1] == ')' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(')');
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(')');
                     i += 2;
                 }
@@ -200,7 +230,15 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
 
             // Command substitution $(...)
             if ch == '$' && i + 1 < len && line[i + 1] == '(' {
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('$');
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('(');
                 i += 2;
                 var depth = 1;
@@ -208,7 +246,19 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
                     if line[i] == '(' { depth++; }
                     else if line[i] == ')' {
                         depth--;
-                        if depth == 0 { tok.text.push(')'); i++; break; }
+                        if depth == 0 {
+                            if tok.text.len >= 128 {
+                                print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                                return -1;
+                            }
+                            tok.text.push(')');
+                            i++;
+                            break;
+                        }
+                    }
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
                     }
                     tok.text.push(line[i]);
                     i++;
@@ -218,13 +268,25 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
 
             // Command substitution `...`
             if ch == '`' {
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('`');
                 i++;
                 while i < len && line[i] != '`' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(line[i]);
                     i++;
                 }
                 if i < len && line[i] == '`' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push('`');
                     i++;
                 }
@@ -233,14 +295,30 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
 
             // Variable ${...}
             if ch == '$' && i + 1 < len && line[i + 1] == '{' {
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('$');
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('{');
                 i += 2;
                 while i < len && line[i] != '}' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(line[i]);
                     i++;
                 }
                 if i < len && line[i] == '}' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push('}');
                     i++;
                 }
@@ -252,9 +330,17 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
             }
             if ch == '\\' {
                 if i + 1 < len {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(line[i + 1]);
                     i += 2;
                 } else {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(ch);
                     i++;
                 }
@@ -262,13 +348,25 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
             }
             if ch == '\'' {
                 // Single quote: preserve quotes so expansion engine knows not to expand
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('\'');
                 i++;
                 while i < len && line[i] != '\'' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(line[i]);
                     i++;
                 }
                 if i < len && line[i] == '\'' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push('\'');
                     i++;
                 }
@@ -276,28 +374,52 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&) -> i32 {
             }
             if ch == '"' {
                 // Double quote: preserve quotes so expansion engine knows not to glob
+                if tok.text.len >= 128 {
+                    print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                    return -1;
+                }
                 tok.text.push('"');
                 i++;
                 while i < len && line[i] != '"' {
                     if line[i] == '\\' && i + 1 < len {
                         let next = line[i + 1];
                         if next == '"' || next == '\\' || next == '$' || next == '`' {
+                            if tok.text.len >= 128 {
+                                print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                                return -1;
+                            }
                             tok.text.push('\\');
+                            if tok.text.len >= 128 {
+                                print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                                return -1;
+                            }
                             tok.text.push(next);
                             i += 2;
                             continue;
                         }
                     }
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push(line[i]);
                     i++;
                 }
                 if i < len && line[i] == '"' {
+                    if tok.text.len >= 128 {
+                        print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                        return -1;
+                    }
                     tok.text.push('"');
                     i++;
                 }
                 continue;
             }
 
+            if tok.text.len >= 128 {
+                print("gosh: input capacity exceeded: word bytes (maximum 128)");
+                return -1;
+            }
             tok.text.push(ch);
             i++;
         }
