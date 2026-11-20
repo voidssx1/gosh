@@ -458,8 +458,48 @@ recursive fn execute_pipeline(state: ShellState&, pipe: const Pipeline&) -> i32 
     return last_status;
 }
 
+// Case patterns are expanded like words (quotes removed, parameters and command
+// substitutions expanded) but never pathname-expanded. Alternatives inside one
+// pattern list are separated by unquoted '|' and match bytewise glob patterns.
+fn case_pattern_matches(state: const ShellState&, patterns: const u8[:], subject: const u8[:]) -> bool {
+    var start = 0;
+    var i = 0;
+    var in_single = false;
+    var in_double = false;
+    while i < patterns.len {
+        let c = patterns[i];
+        if c == '\'' && !in_double {
+            in_single = !in_single;
+        } else if c == '"' && !in_single {
+            in_double = !in_double;
+        } else if c == '|' && !in_single && !in_double {
+            var pat: u8[..128] = [];
+            expand_word(state, patterns[start..i], pat);
+            if glob_match(pat, subject) { return true; }
+            start = i + 1;
+        }
+        i++;
+    }
+    var pat: u8[..128] = [];
+    expand_word(state, patterns[start..], pat);
+    return glob_match(pat, subject);
+}
+
 // Control flow runs in the current shell; its caller owns descriptor cleanup.
 recursive fn execute_compound_statement(state: ShellState&, stmt: const Statement&) -> i32 {
+    if stmt.kind == STMT_CASE {
+        var subject: u8[..128] = [];
+        expand_word(state, stmt.cond_text, subject);
+        var idx: i32 = 0;
+        while idx < stmt.case_count {
+            if case_pattern_matches(state, stmt.case_patterns[idx], subject) {
+                return execute_script(state, stmt.case_bodies[idx]);
+            }
+            idx++;
+        }
+        return 0;
+    }
+
     if stmt.kind == STMT_IF {
         let cond_res = execute_script(state, stmt.cond_text);
         if cond_res == 0 {
@@ -567,7 +607,7 @@ recursive fn execute_statement(state: ShellState&, stmt: const Statement&) -> i3
         return gosh_wait_pid(pid);
     }
 
-    if stmt.kind == STMT_IF || stmt.kind == STMT_WHILE || stmt.kind == STMT_FOR {
+    if stmt.kind == STMT_IF || stmt.kind == STMT_WHILE || stmt.kind == STMT_FOR || stmt.kind == STMT_CASE {
         if stmt.redirs.len == 0 {
             return execute_compound_statement(state, stmt);
         }

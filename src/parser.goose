@@ -27,7 +27,8 @@ fn attach_heredoc(r: Redirection&, heredocs: const Heredoc[..4]&, idx: i32&) -> 
 // tokens so an inner fi/done cannot terminate an enclosing construct.
 fn is_control_end(kind: i32) -> bool {
     kind == TOKEN_THEN || kind == TOKEN_ELIF || kind == TOKEN_ELSE ||
-    kind == TOKEN_FI || kind == TOKEN_DO || kind == TOKEN_DONE
+    kind == TOKEN_FI || kind == TOKEN_DO || kind == TOKEN_DONE ||
+    kind == TOKEN_ESAC
 }
 
 fn copy_control_text(tokens: const Token[..64]&, start: i32, end: i32, out: u8[..512]&, max_len: i32) -> bool {
@@ -80,9 +81,11 @@ recursive fn collect_control_text(tokens: const Token[..64]&, pos: i32&, stop1: 
             pos++;
             continue;
         }
-        if command_start && (kind == TOKEN_IF || kind == TOKEN_WHILE || kind == TOKEN_FOR) {
+        if command_start && (kind == TOKEN_IF || kind == TOKEN_WHILE || kind == TOKEN_FOR || kind == TOKEN_CASE) {
             var nested = Statement {};
-            if !parse_control(tokens, pos, nested, error) { return false; }
+            if kind == TOKEN_CASE {
+                if !parse_case(tokens, pos, nested, error) { return false; }
+            } else if !parse_control(tokens, pos, nested, error) { return false; }
         } else if kind == TOKEN_LPAREN || kind == TOKEN_LBRACE {
             // Empty parentheses may be part of a function declaration.
             if kind == TOKEN_LPAREN && pos + 1 < tokens.len && tokens[pos + 1].kind == TOKEN_RPAREN {
@@ -170,7 +173,7 @@ recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statemen
             if pos < tokens.len && tokens[pos].kind == TOKEN_IN {
                 pos++;
                 while pos < tokens.len && tokens[pos].kind != TOKEN_SEMI && tokens[pos].kind != TOKEN_NEWLINE && tokens[pos].kind != TOKEN_EOF {
-                    if tokens[pos].kind != TOKEN_WORD && !(tokens[pos].kind >= TOKEN_IF && tokens[pos].kind <= TOKEN_FUNCTION) {
+                    if tokens[pos].kind != TOKEN_WORD && !(tokens[pos].kind >= TOKEN_IF && tokens[pos].kind <= TOKEN_ESAC) {
                         format(error, "expected for word or separator");
                         return false;
                     }
@@ -193,6 +196,155 @@ recursive fn parse_control(tokens: const Token[..64]&, pos: i32&, stmt: Statemen
     format(stmt.cond_text, cond);
     format(stmt.body_text, body);
     format(stmt.else_text, alternative);
+    return true;
+}
+
+// A case pattern is one word made of alternatives separated by '|'. The leading
+// '(' is optional, and keyword-shaped words are legal patterns.
+fn collect_case_pattern(tokens: const Token[..64]&, pos: i32&, out: u8[..128]&, error: u8[..256]&) -> bool {
+    if pos < tokens.len && tokens[pos].kind == TOKEN_LPAREN { pos++; }
+    var depth = 0;
+    var has_piece = false;
+    while pos < tokens.len && tokens[pos].kind != TOKEN_EOF {
+        let kind = tokens[pos].kind;
+        if kind == TOKEN_RPAREN && depth == 0 { break; }
+        if kind == TOKEN_LPAREN { depth++; }
+        else if kind == TOKEN_RPAREN { depth--; }
+        var piece: u8[..128] = [];
+        if kind == TOKEN_PIPE {
+            format(piece, "|");
+        } else if kind == TOKEN_WORD || (kind >= TOKEN_IF && kind <= TOKEN_ESAC) || kind == TOKEN_LPAREN || kind == TOKEN_RPAREN {
+            format(piece, tokens[pos].text);
+        } else {
+            format(error, "unexpected '", tokens[pos].text, "' in case pattern");
+            return false;
+        }
+        if out.len + piece.len > 128 {
+            print("gosh: input capacity exceeded: case pattern bytes (maximum 128)");
+            return false;
+        }
+        format(out, piece);
+        has_piece = true;
+        pos++;
+    }
+    if depth != 0 {
+        format(error, "unclosed group in case pattern");
+        return false;
+    }
+    if !has_piece {
+        format(error, "expected a case pattern");
+        return false;
+    }
+    if pos >= tokens.len || tokens[pos].kind != TOKEN_RPAREN {
+        format(error, "expected ')'");
+        return false;
+    }
+    pos++;
+    return true;
+}
+
+// Collect one item body. Textual nested-case tracking keeps inner ';;' and
+// 'esac' from ending the item; the body is re-parsed when it runs.
+// Returns 1 after ';;', 2 with pos at 'esac', and -1 on error.
+fn collect_case_body(tokens: const Token[..64]&, pos: i32&, out: u8[..512]&, error: u8[..256]&) -> i32 {
+    var nested_case = 0;
+    var command_start = true;
+    while pos < tokens.len && tokens[pos].kind != TOKEN_EOF {
+        let kind = tokens[pos].kind;
+        if kind == TOKEN_SEMI && nested_case == 0 && pos + 1 < tokens.len && tokens[pos + 1].kind == TOKEN_SEMI {
+            pos += 2;
+            return 1;
+        }
+        if command_start && kind == TOKEN_ESAC {
+            if nested_case == 0 { return 2; }
+            nested_case--;
+        }
+        if command_start && kind == TOKEN_CASE { nested_case++; }
+        if kind == TOKEN_NEWLINE || kind == TOKEN_SEMI {
+            if out.len + 2 > 512 {
+                print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                return -1;
+            }
+            out.push(';');
+            out.push(' ');
+            pos++;
+            command_start = true;
+            continue;
+        }
+        if out.len > 0 && out[out.len - 1] != ' ' {
+            if out.len + 1 > 512 {
+                print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+                return -1;
+            }
+            out.push(' ');
+        }
+        if out.len + tokens[pos].text.len > 512 {
+            print("gosh: input capacity exceeded: compound text bytes (maximum 512)");
+            return -1;
+        }
+        format(out, tokens[pos].text);
+        pos++;
+        command_start = false;
+    }
+    format(error, "expected 'esac'");
+    return -1;
+}
+
+// Grammar:
+//   case WORD in
+//       [ ( ] PATTERN [ | PATTERN ]... ) [ NEWLINE ] BODY ;;
+//       ...
+//   esac
+fn parse_case(tokens: const Token[..64]&, pos: i32&, stmt: Statement&, error: u8[..256]&) -> bool {
+    pos++; // consume 'case'
+    if pos >= tokens.len || tokens[pos].kind == TOKEN_EOF || tokens[pos].kind == TOKEN_IN ||
+       (tokens[pos].kind != TOKEN_WORD && !(tokens[pos].kind >= TOKEN_IF && tokens[pos].kind <= TOKEN_ESAC)) {
+        format(error, "expected case word");
+        return false;
+    }
+    if tokens[pos].text.len > 128 {
+        print("gosh: input capacity exceeded: case word bytes (maximum 128)");
+        return false;
+    }
+    format(stmt.cond_text, tokens[pos].text);
+    pos++;
+    while pos < tokens.len && (tokens[pos].kind == TOKEN_NEWLINE || tokens[pos].kind == TOKEN_SEMI) { pos++; }
+    if pos >= tokens.len || tokens[pos].kind != TOKEN_IN {
+        format(error, "expected 'in'");
+        return false;
+    }
+    pos++;
+
+    stmt.kind = STMT_CASE;
+    stmt.case_count = 0;
+    loop {
+        while pos < tokens.len && (tokens[pos].kind == TOKEN_NEWLINE || tokens[pos].kind == TOKEN_SEMI) { pos++; }
+        if pos >= tokens.len || tokens[pos].kind == TOKEN_EOF {
+            format(error, "expected 'esac'");
+            return false;
+        }
+        if tokens[pos].kind == TOKEN_ESAC {
+            pos++;
+            break;
+        }
+        if stmt.case_count >= 8 {
+            print("gosh: input capacity exceeded: case items (maximum 8)");
+            return false;
+        }
+        var pattern: u8[..128] = [];
+        if !collect_case_pattern(tokens, pos, pattern, error) { return false; }
+        while pos < tokens.len && tokens[pos].kind == TOKEN_NEWLINE { pos++; }
+        var body: u8[..512] = [];
+        let stop = collect_case_body(tokens, pos, body, error);
+        if stop < 0 { return false; }
+        stmt.case_patterns.push(pattern);
+        stmt.case_bodies.push(body);
+        stmt.case_count = stmt.case_patterns.len as i32;
+        if stop == 2 {
+            pos++; // consume 'esac'
+            break;
+        }
+    }
     return true;
 }
 
@@ -219,6 +371,23 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, heredocs
         if tok.kind == TOKEN_IF || tok.kind == TOKEN_WHILE || tok.kind == TOKEN_FOR {
             var stmt = Statement {};
             if !parse_control(tokens, pos, stmt, error) { return false; }
+            while pos < n && is_redir_token(tokens[pos].kind) {
+                var r = Redirection { kind: tokens[pos].kind };
+                pos++;
+                if pos < n && tokens[pos].kind == TOKEN_WORD { format(r.target, tokens[pos].text); pos++; }
+                if !attach_heredoc(r, heredocs, heredoc_idx) { return false; }
+                if stmt.redirs.len >= 4 {
+                    print("gosh: input capacity exceeded: redirections (maximum 4)");
+                    return false;
+                }
+                stmt.redirs.push(r);
+            }
+            stmts.push(stmt);
+            continue;
+        }
+        if tok.kind == TOKEN_CASE {
+            var stmt = Statement {};
+            if !parse_case(tokens, pos, stmt, error) { return false; }
             while pos < n && is_redir_token(tokens[pos].kind) {
                 var r = Redirection { kind: tokens[pos].kind };
                 pos++;
@@ -421,7 +590,7 @@ fn parse_statements(tokens: const Token[..64]&, stmts: Statement[..8]&, heredocs
             }
 
             // Word / Argument
-            if t.kind == TOKEN_WORD || (t.kind >= TOKEN_IF && t.kind <= TOKEN_FUNCTION) {
+            if t.kind == TOKEN_WORD || (t.kind >= TOKEN_IF && t.kind <= TOKEN_ESAC) {
                 // Check if assignment (e.g. FOO=bar) on first word with no command yet
                 if current_cmd.argv.len == 0 && !current_cmd.is_assignment {
                     let eq = find(t.text, "=");

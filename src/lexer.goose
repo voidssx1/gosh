@@ -550,6 +550,8 @@ fn tokenize_line(line: const u8[:], tokens: Token[..64]&, heredocs: Heredoc[..4]
         else if tok.text == "in" { tok.kind = TOKEN_IN; }
         else if tok.text == "do" { tok.kind = TOKEN_DO; }
         else if tok.text == "done" { tok.kind = TOKEN_DONE; }
+        else if tok.text == "case" { tok.kind = TOKEN_CASE; }
+        else if tok.text == "esac" { tok.kind = TOKEN_ESAC; }
         else if tok.text == "function" { tok.kind = TOKEN_FUNCTION; }
 
         tokens.push(tok);

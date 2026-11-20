@@ -324,6 +324,40 @@ run_test "nested redirection and following command" "if test 1 -eq 1; then for i
 b"
 rm -f "$TMP_FILE"
 
+# Contribution: case ... esac statements.
+run_test "case exact match" 'case banana in apple) echo wrong;; banana) echo matched;; esac' "matched"
+run_test "case first match wins" 'case b in b) echo first;; b) echo second;; esac' "first"
+run_test "case no match status zero" 'case x in a) echo wrong;; esac; echo $?' "0"
+run_test "case default star" 'case zebra in a) echo wrong;; *) echo fallback;; esac' "fallback"
+run_test "case glob pattern" 'case hello.txt in *.txt) echo text;; *) echo other;; esac' "text"
+run_test "case question pattern" 'case a1 in a?) echo two;; *) echo wrong;; esac' "two"
+run_test "case alternatives" 'case two in one|two|three) echo middle;; *) echo wrong;; esac' "middle"
+run_test "case quoted pattern stays literal" 'case * in "*") echo literal;; *) echo wrong;; esac' "literal"
+run_test "case variable subject" 'x=foo; case "$x" in f*) echo var;; *) echo wrong;; esac' "var"
+run_test "case body status" 'case a in a) test 1 -eq 2;; esac; echo $?' "1"
+run_test "case body preserves state" 'x=before; case a in a) x=after;; esac; echo $x' "after"
+run_test "case multiline items" 'case a in
+a)
+    echo multi
+    ;;
+esac' "multi"
+run_test "case optional leading paren" 'case a in (a) echo paren;; esac' "paren"
+run_test "case empty body" 'case a in a) ;; esac; echo ok' "ok"
+run_test "case nested case" 'case a in a) case b in b) echo inner;; esac; echo outer;; esac' "inner
+outer"
+run_test "case inside for" 'for i in a b; do case $i in a) echo A;; *) echo B;; esac; done' "A
+B"
+run_test "case inside if" 'if test 1 -eq 1; then case x in x) echo yes;; esac; fi' "yes"
+run_test "case inside while" 'i=0; while test $i -lt 2; do case $i in 0) echo zero;; *) echo other;; esac; i=$((i + 1)); done' "zero
+other"
+run_test "case with redirection" 'case a in a) echo redir;; esac > "$TMP_FILE" && cat "$TMP_FILE"' "redir"
+run_test "case with here-document redirection" 'case a in a) cat;; esac <<EOF
+case input
+EOF' "case input"
+run_test "case keyword arguments" 'case a in a) echo case esac;; esac' "case esac"
+run_test "case variable pattern" 'p="a*"; case abc in $p) echo expanded;; esac' "expanded"
+rm -f "$TMP_FILE"
+
 run_syntax_test() {
     local test_name="$1" cmd="$2" expected="$3" actual status=0
     actual=$("$GOSH" -c "$cmd" 2>&1) || status=$?
@@ -364,6 +398,10 @@ run_syntax_test "tab-stripping here-document unsupported" 'cat <<-EOF
 body
 EOF' "tab-stripping here-documents (<<-) are not supported"
 run_syntax_test "missing here-document delimiter" 'cat <<' "expected here-document delimiter"
+run_syntax_test "missing esac" 'case a in a) echo wrong' "expected 'esac'"
+run_syntax_test "missing case word" 'case in a) echo wrong;; esac' "expected case word"
+run_syntax_test "missing case in" 'case a a) echo wrong;; esac' "expected 'in'"
+run_syntax_test "stray esac" 'esac' "unexpected 'esac'"
 
 # 10. Functions and Aliases
 run_test "shell function" "greet() { echo \"Hello, \$1!\"; }; greet Gosh" "Hello, Gosh!"
