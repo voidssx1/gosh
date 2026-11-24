@@ -26,16 +26,17 @@ GOSH compiles into a native ELF binary using the Goose toolchain. It aims to com
 
 - **Native Binary Execution**: Compiles to an independent ELF binary with zero interpreter warm-up overhead.
 - **Full Multi-Stage Pipelines**: Arbitrary command pipelines (`cmd1 | cmd2 | cmd3`) where any stage can be an external executable, a shell builtin, an alias, or a user-defined function.
+- **Command Lists & Conditional Execution**: Sequence commands with `;` and chain them with short-circuit `&&` and `||` operators.
 - **Comprehensive Redirection**:
   - File redirection: `< input`, `> output`, `>> append`
   - Standard error redirection: `2> err`, `2>> err_app`
   - Merged descriptors: `2>&1`, `&>`
-  - Redirections apply to external commands, builtins, subshells, and compound loop/conditional statements.
+  - Redirections apply to external commands, builtins, subshells, and compound loop/conditional/`case` statements.
 - **Subshell Isolation**: Grouped commands in `( ... )` run in a dedicated forked subshell process, isolating working directory changes and variable mutations from the parent shell.
 - **Here-Documents & Here-Strings**: Multi-line stdin bodies (`<<EOF`), quoted delimiters that disable expansion (`<<'EOF'`), and `<<< word` here-strings. They feed external commands, builtins, functions, pipeline stages, and compound-statement redirections.
 - **Command & Arithmetic Substitutions**: Full nested command capture (`$(...)` and `` `...` ``) and arithmetic expression evaluation (`$(( ... ))`).
 - **Control Flow & Compound Commands**: Standard `if/then/elif/else/fi`, `while/do/done`, `for/in/do/done` loops, and `case ... in ... esac` statements with `|` alternatives, glob patterns, and a `*` default item. `while` conditions and loop bodies are parsed once and their statement trees are reused across iterations, avoiding repeated lexing and parsing.
-- **Shell Functions & Aliases**: User-defined functions with positional parameter arguments (`$1`, `$2`, `$#`) and command aliases.
+- **Shell Functions & Aliases**: User-defined functions in both `name() { ... }` and `function name { ... }` forms, with positional parameter arguments (`$1`, `$2`, `$#`), plus command aliases.
 - **Process Management & Job Control**: Background process spawning (`cmd &`), active job tracking (`jobs`), and foreground/background job resumption (`fg`, `bg`).
 - **Interactive Line Editor**:
   - Real-time syntax highlighting (valid executables/builtins, unknown commands, quotes, variables, operators)
@@ -50,7 +51,7 @@ GOSH compiles into a native ELF binary using the Goose toolchain. It aims to com
 
 ### System Requirements
 - **Operating System**: Linux (x86_64, aarch64) or compatible Unix-like environment.
-- **Goose Compiler**: `goose` (tested with Goose v2026.3).
+- **Goose Compiler**: `goose` (tested with Goose v2026.3 and v2026.4).
 - **C Compiler**: `gcc` (recommended: GCC 10+) or `clang`, required by Goose for linking the native C runtime and producing the final binary.
 - **Make / Build Tools**: Standard build utilities (`cmake`, `git`).
 
@@ -138,6 +139,21 @@ ls /nonexistent_path 2>&1 | grep "No such"
 cat < output.txt
 ```
 
+#### Here-Documents & Here-Strings
+```bash
+# Multi-line stdin body; quote the delimiter to disable expansion
+cat <<EOF
+hello from GOSH
+EOF
+
+cat <<'EOF'
+literal $HOME and $(command) are not expanded here
+EOF
+
+# Single-line here-string
+cat <<< "single-line input"
+```
+
 #### Subshell Isolation
 ```bash
 # Changes made inside subshells do not leak to the parent process
@@ -164,6 +180,23 @@ while test $count -lt 3; do
     echo "Count: $count"
     count=$((count + 1))
 done
+
+# Case statement with alternative patterns and a default
+case "$command" in
+    start|run) echo "starting" ;;
+    stop)      echo "stopping" ;;
+    *)         echo "usage: $0 {start|stop}" ;;
+esac
+```
+
+#### Command Lists & Short-Circuit Operators
+```bash
+# `&&` runs the next command only on success; `||` runs it only on failure
+test -d /tmp && echo "/tmp exists"
+test -d /missing || echo "/missing does not exist"
+
+# Commands can be sequenced on one line with `;`
+echo "first"; echo "second"
 ```
 
 #### Shell Functions & Positional Parameters
@@ -185,6 +218,13 @@ jobs
 ---
 
 ## 6. Supported Builtins and Syntax
+
+### Shell Syntax
+
+- **Command lists**: `;`, short-circuit `&&` / `||`, and background `&`
+- **Compound commands**: `if/then/elif/else/fi`, `while/do/done`, `for/in/do/done`, and `case/in/esac`
+- **Functions**: `name() { ... }` and `function name { ... }`
+- **Redirections**: `<`, `>`, `>>`, `2>`, `2>>`, `2>&1`, `&>`, here-documents `<<`, and here-strings `<<<`
 
 ### Builtin Commands
 
@@ -296,12 +336,14 @@ The main script runs the shell command regressions and invokes the CLI, job-cont
 python3 test/test_runner.py
 ```
 
+The `test/` directory also contains independent Python tests for completion behavior (`test/test_completion.py`) and benchmark-harness validation (`test/test_benchmark.py`).
+
 ### Coverage Areas
 
 - Builtins, command lookup, variables, exported assignments, and positional arguments
-- Arithmetic expansion, integer/string tests, and command/parameter substitutions
+- Arithmetic expansion across the full operator ladder, integer/string tests, and command/parameter substitutions
 - Quoting, tilde expansion, and pathname globbing (including ordering, hidden names, and unmatched patterns)
-- Pipelines, redirections, subshells, functions, aliases, and compound control flow
+- Pipelines, redirections (including here-documents and here-strings), subshells, functions, aliases, and compound control flow (`if`, `while`, `for`, `case`)
 - Background jobs, stopped/continued process states, and foreground/background resumption
 - Input-capacity boundaries and rejection before partial execution
 - CLI argument boundaries, startup modes, and interactive configuration behavior
@@ -316,7 +358,8 @@ GOSH is under active development. The current release is focused on core POSIX s
 
 - **POSIX Coverage**: GOSH implements a large subset of POSIX shell semantics, but is not yet fully POSIX.1-2017 compliant.
 - **Here-Documents (`<<EOF`)**: Bodies are limited to 512 bytes, at most four per command line, and are supported for top-level commands, pipelines, functions, and compound-statement redirections. A here-document *inside* an `if`/`for`/`while`/function/subshell body is rejected with a syntax error, and tab-stripping `<<-` is not supported.
-- **Case Statements (`case ... in ... esac`)**: Patterns support `|` alternatives, glob matching, and a `*` default item.
+- **Case Statements (`case ... in ... esac`)**: A statement holds at most eight items, each pattern is limited to 128 bytes, and each item body to 512 bytes. Fallthrough terminators `;&` and `;;&` are not supported.
+- **`until` Loops**: The `until` keyword is tokenized, but loop execution is not implemented; use `while` with a negated condition instead.
 - **Arithmetic Operators**: Arithmetic expansion implements the POSIX precedence ladder, including bitwise, comparison, logical, and ternary operators. Constants are decimal or `0x` hexadecimal; C-style octal literals and floating-point arithmetic are not supported.
 - **Terminal Raw Mode**: The interactive line editor relies on standard ANSI/VT100 escape codes; dumb terminals or non-standard terminal emulators may experience reduced formatting capabilities.
 
@@ -335,6 +378,9 @@ GOSH is under active development. The current release is focused on core POSIX s
 - [x] Here-documents (`<<EOF`) and here-strings (`<<<`)
 - [x] `case ... esac` statement parsing and pattern execution
 - [x] Extend arithmetic expansion with bitwise and ternary operators, with explicit overflow and division semantics
+- [ ] Here-documents inside compound bodies and `<<-` tab stripping
+- [ ] `case` fallthrough terminators (`;&`, `;;&`)
+- [ ] `until ... do ... done` loop execution
 - [ ] Recursive globbing (`**/*.ext`)
 - [ ] Programmable user-defined completion functions
 - [x] Interactive user configuration file loading (`~/.goshrc`)
